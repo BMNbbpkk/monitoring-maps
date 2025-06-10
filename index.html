@@ -8,59 +8,101 @@
   <style>
     #map {
       height: 100vh;
+      width: 100%;
+    }
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+    .error {
+      color: red;
+      padding: 10px;
+      background: #ffecec;
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="error" class="error"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([-6.813333, 107.615278], 17);
-
+    // Inisialisasi peta dengan view default
+    const map = L.map('map').setView([-6.813333, 107.615], 17);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    const sheetURL = 'https://script.google.com/macros/s/AKfycbwW1-qxl9R9cEZ5m372vxvuAhEhBqEsg06tJVP1GpE917rG0wtEoDeNqLZ_eIDdplegDw/exec';
+    // URL Google Sheets (ganti dengan ID dan nama sheet Anda)
+    const sheetURL = 'https://opensheet.elk.sh/1MaHYUGQOCpFQi_xzPRttI6yJWrsXMVFhcACpfPTOg3A/DataBarang';
 
+    // Fungsi untuk menentukan warna marker berdasarkan kondisi
+    function getColorByKondisi(kondisi) {
+      if (!kondisi) return 'gray';
+      kondisi = kondisi.toLowerCase();
+      if (kondisi.includes('berat')) return 'red';
+      if (kondisi.includes('ringan')) return 'orange';
+      return 'green';
+    }
+
+    // Fetch data dan tampilkan marker
     fetch(sheetURL)
-      .then(response => response.json())
-      .then(data => {
-        data.forEach(item => {
-          if (!item["Koordinat"]) return;
-
-          const koordinat = item["Koordinat"].split(',').map(k => parseFloat(k.trim()));
-          if (koordinat.length !== 2 || isNaN(koordinat[0]) || isNaN(koordinat[1])) {
-            console.warn("Koordinat tidak valid:", item);
-            return;
-          }
-
-          const [lat, lng] = koordinat;
-
-          let color = 'green';
-          const kondisi = (item["Kondisi"] || '').toLowerCase();
-          if (kondisi.includes('berat')) color = 'red';
-          else if (kondisi.includes('ringan')) color = 'orange';
-
-          const marker = L.circleMarker([lat, lng], {
-            radius: 10,
-            color: color,
-            fillColor: color,
-            fillOpacity: 0.7
-          }).addTo(map);
-
-          marker.bindPopup(`
-            <b>${item["Nama Barang"] || "Tanpa Nama"}</b><br>
-            Kode: ${item["Kode Barang"] || "-"}<br>
-            Ruangan: ${item["Ruangan"] || "-"}<br>
-            Kondisi: ${item["Kondisi"] || "-"}<br>
-            Dicek: ${item["Terakhir Dicek"] || "-"}
-          `);
-        });
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        return response.json();
       })
-      .catch(err => {
-        console.error("Gagal mengambil data:", err);
+      .then(data => {
+        if (!Array.isArray(data)) throw new Error("Data tidak valid: bukan array");
+        
+        let markersLoaded = 0;
+        data.forEach(item => {
+          try {
+            // Validasi data
+            if (!item["Koordinat"]) return;
+            
+            const koordinat = item["Koordinat"].split(',').map(k => parseFloat(k.trim()));
+            if (koordinat.length !== 2 || isNaN(koordinat[0]) throw new Error("Format koordinat salah");
+            
+            const [lat, lng] = koordinat;
+            const color = getColorByKondisi(item["Kondisi"]);
+
+            // Tambahkan marker ke peta
+            const marker = L.circleMarker([lat, lng], {
+              radius: 10,
+              color: color,
+              fillColor: color,
+              fillOpacity: 0.7
+            }).addTo(map);
+
+            // Popup info
+            marker.bindPopup(`
+              <b>${item["Nama Barang"] || "Tanpa Nama"}</b><br>
+              Kode: ${item["Kode Barang"] || "-"}<br>
+              Ruangan: ${item["Ruangan"] || "-"}<br>
+              Kondisi: ${item["Kondisi"] || "-"}<br>
+              Terakhir Dicek: ${item["Terakhir Dicek"] || "-"}
+            `);
+            
+            markersLoaded++;
+          } catch (e) {
+            console.warn("Error memproses item:", item, "Error:", e.message);
+          }
+        });
+
+        // Jika tidak ada marker yang muncul
+        if (markersLoaded === 0) {
+          document.getElementById('error').textContent = 
+            "Data berhasil dimuat tetapi tidak ada marker yang valid. Cek format kolom 'Koordinat' di Google Sheets.";
+        }
+      })
+      .catch(error => {
+        console.error("Gagal memuat data:", error);
+        document.getElementById('error').textContent = 
+          `Error: ${error.message}. Pastikan: 
+          1. Sheet sudah dipublish (File > Share > Publish to web), 
+          2. Nama sheet benar (case-sensitive), 
+          3. Format kolom sesuai.`;
       });
   </script>
 </body>
